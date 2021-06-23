@@ -1,0 +1,298 @@
+---
+title: "BBI single cell data analysis tutorial"
+host: "Brotman Baty Institute Single-cell Bioinformatics Team"
+date: "August 27, 2019"
+---
+------
+
+**Contacts**
+hpliner@uw.edu, aishwarya.gogate@seattlechildrens.org
+
+#The Monocle 3 pipeline
+
+## Load Monocle 3
+```{r echo=FALSE, results="hide", error=FALSE, message=FALSE, warning=FALSE}
+library(monocle3)
+library(ggplot2)
+```
+
+### Note: You must have Monocle 3 already installed. If not, please follow the steps below:
+```
+install.packages("devtools")
+devtools::install_github('cole-trapnell-lab/leidenbase')
+devtools::install_github('cole-trapnell-lab/monocle3')
+library(monocle3)
+```
+
+## Load the cds object
+```{r load, echo=FALSE}
+expression_matrix <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_expression.rds"))
+cell_metadata <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_colData.rds"))
+gene_annotation <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_rowData.rds"))
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+```
+
+## Another option is to read in pre-made cds files
+```{r echo=TRUE}
+cds1 <- readRDS('~/Downloads/cds1.RDS')
+cds2 <- readRDS('~/Downloads/cds2.RDS')
+```
+
+#Combine cds objects
+```{r echo=TRUE}
+cds <- combine_cds(list(cds1=cds1, cds2=cds2))
+```
+
+## Test out the accessor functions
+```{r echo=FALSE}
+cds
+head(colData(cds))
+head(rowData(cds))
+head(counts(cds))
+```
+
+##################################################################################################
+# You get back your data, now what? First, look at your dashboard. Then try some other things!
+##################################################################################################
+
+### Q1. How many "good" cells do I have?
+
+## Remove cells with low UMI counts (BBI default cut off is 100)
+```{r echo=FALSE}
+cds <- cds[,Matrix::colSums(counts(cds)) > 500]
+cds <- cds[,colData(cds)$n.umi > 500] #if you have BBI returned data
+
+
+# plot the distribution of UMIs
+qplot(colData(cds)$n.umi, geom="density")
+qplot(log10(colData(cds)$n.umi), geom="density")
+
+# Filter for low UMIs and high mito %
+# You can also filter for unreasonably high UMIs
+# Hint: Look at summary(colData(DP3_cds)$n.umi)
+
+cds <- cds[,colData(cds)$n.umi < 1500]
+cds <- cds[,colData(cds)$perc_mitochondrial_umis < 10]
+```
+## Additional checks
+Does your data have doublets? How sure are you?
+Hint: Check out scrublet!
+
+## CHALLENGE:
+What's the distribution of mitochondrial genome reads in your data?
+
+
+##################################################################################################
+
+### Q2. How many "types" of cells do I have?
+
+## Pre-process the cds
+### Note: This step normalizes the data and runs PCA
+```{r echo=FALSE}
+
+cds <- preprocess_cds(cds, num_dim = 100)
+plot_pc_variance_explained(cds)
+
+```
+
+## Run UMAP to get low dimension representation and visualize
+```{r echo=FALSE}
+cds <- reduce_dimension(cds)
+plot_cells(cds)
+```
+
+## Cluster cells and visualize the clusters and partitions
+### Note: Partitions are basically super-clusters
+```{r echo=FALSE}
+cds <- cluster_cells(cds)
+head(partitions(cds, reduction_method = "UMAP"))
+head(clusters(cds, reduction_method = "UMAP"))
+plot_cells(cds)
+plot_cells(cds, color_cells_by="partition", group_cells_by="partition")
+plot_cells(cds, color_cells_by="cluster", group_cells_by="cluster")
+```
+
+## Plot the expression of some genes
+```{r echo=TRUE, error=FALSE, message=FALSE, warning=FALSE}
+plot_cells(cds, genes = c("csq-1", "hum-9", "glh-1", "pgl-1"))
+```
+
+
+## CHALLENGE:
+How different is the clustering if you use tSNE instead of UMAP?
+
+
+##################################################################################################
+
+### Q3. What makes the "types" of cells different?
+
+## Subset cells interactively to isolate germline and body wall muscle cells
+Hint: some body wall muscle markers: csq-1, hum-9
+      some germline markers: glh-1, pgl-1
+
+```{r echo=FALSE}
+plot_cells(cds, genes = c("csq-1", "hum-9", "glh-1", "pgl-1"))
+```
+
+```{r echo=FALSE}
+cds_subset <- choose_cells(cds)
+```
+
+## Compare genes across chosen clusters
+```{r echo=FALSE}
+gene_fits <- fit_models(cds_subset[1:1000,], model_formula_str = "~partition")
+fit_coefs <- coefficient_table(gene_fits)
+head(fit_coefs)
+```
+
+# How many genes are differentially expressed between the two partitions?
+
+
+## We can identify genes that vary across all clusters by calling the fit_models() function
+```{r echo=FALSE}
+# this takes a while!!
+gene_fits = fit_models(cds, model_formula_str = "~cluster")
+```
+
+## Similarly, we can identify genes that vary across tissue type by calling the fit_models() function
+### Note: You can also include multiple variables, for example ~cao_tissue + plate, which can be very helpful for subtracting unwanted batch effects.
+```{r echo=FALSE}
+gene_fits = fit_models(cds_subset, model_formula_str = "~cao_tissue")
+
+## Now let's see which of these genes have tissue type-dependent expression. First, we extract a table of coefficients from each model using the coefficient_table() function:
+fit_coefs = coefficient_table(gene_fits)
+fit_coefs
+```
+
+## CHALLENGE:
+1. Find out something else about this data!
+2. What variables will you want to test in your data?
+
+
+##################################################################################################
+
+### Q4. What are the identities of the cell types?
+
+Using Garnett: two options:
+
+1. If you know a lot about your data, generate a marker file using
+   known markers from the literature.
+
+2. If you are just exploring, you can use top_markers to determine
+   which genes are specific to each cluster and use these to generate
+   a marker file.
+
+
+## Find top marker genes for each cluster
+```{r echo=FALSE}
+marker_genes <- top_markers(cds, genes_to_test_per_group = 10, group_cells_by = "partition")
+head(marker_genes)
+```
+
+## Subset the top most significant markers based on q-value
+```{r echo=FALSE}
+top_sig <- subset(marker_genes, marker_test_q_value < .05)
+```
+
+## Generate marker file to input into Garnett
+```{r echo=FALSE}
+generate_garnett_marker_file(marker_genes)
+
+# Now check your marker genes and see where they're expressed!
+```
+
+## Install garnett
+```{r echo=FALSE}
+BiocManager::install(c('DelayedArray', 'DelayedMatrixStats', 'org.Hs.eg.db', 'org.Mm.eg.db'))
+devtools::install_github("cole-trapnell-lab/garnett", ref="monocle3")
+BiocManager::install("org.Ce.eg.db")
+
+library(garnett)
+```
+
+## Generate a classifier
+```{r echo=FALSE}
+colData(cds)$garnett_cluster = clusters(cds)
+worm_classifier <- train_cell_classifier(cds = cds,
+                                         marker_file = "./worm_marker_file.txt",
+                                         db=org.Ce.eg.db::org.Ce.eg.db,
+                                         cds_gene_id_type = "ENSEMBL",
+                                         num_unknown = 50,
+                                         marker_file_gene_id_type = "SYMBOL",
+                                         cores=1)
+```
+
+## Classify your cells
+```{r echo=FALSE}
+cds = classify_cells(cds, worm_classifier,
+                           db = org.Ce.eg.db::org.Ce.eg.db,
+                           cluster_extend = TRUE,
+                           cds_gene_id_type = "ENSEMBL")
+```
+
+```{r echo=FALSE}
+plot_cells(cds,
+           group_cells_by="partition",
+           color_cells_by="cluster_ext_type")
+```
+
+## CHALLENGE:
+How well does the classifier work for the automatically generated marker file from top_markers?
+
+##################################################################################################
+## FAQs
+1. Stringent UMI cutoff
+We are often asked how to filter data using a specific (in most cases more stringent) UMI cut-off.
+You can either directly do this while generating a new cds object or use the following one-liner:
+cds <- cds[,Matrix::colSums(counts(cds)) > 1000]
+
+2. Mitochondrial genes as QC metric
+High expression of mitochondrial genes can be an indicator of low quality cells. As a first pass, we recommend using a higher UMI cutoff (the default of 100 is likely too low) and then see if those cells are filtered.
+
+3. Ensure that you do not have doublets in your data (scrublet or DoubletFinder are good tools)
+##################################################################################################
+
+##For further understanding:
+
+## Detailed steps
+In order to identify specific clusters of genes, compare the clusters, perform differential expression analysis and trajectory analysis, we use the Monocle 3 package [link](https://cole-trapnell-lab.github.io/monocle3/). This package provides a toolkit for analyzing single-cell gene expression experiments.
+
+Given below is the description of each step of the Monocle 3 workflow:
+
+## Step 0: QC and filter your data to ensure that good quality data goes into downstream analysis.
+
+## Step 1: Normalize and pre-process the data
+Monocle 3 first normalizes the expression values to account for technical variation in the RNA recovery and sequencing depth.
+
+## Step 2: Dimensionality reduction
+In order to eliminate noise and make further analysis more tractable, Monocle 3 projects the cells onto the top 50 (default) principal components. You can then choose whether to carry out further non-linear dimensionality reduction either by t-SNE or UMAP methods. Monocle 3 then clusters the cells and further organizes them into trajectories if desired.
+
+## Step 3: Cluster and partition cells
+Monocle 3 can learn if cells should be placed in the same trajectory or not through its clustering step. It cleverly detects if some cells are part of a different process than others in the dataset and will therefore build different trajectories simultaneously from a single dataset. This is done by partitioning the cells into super-clusters. Each super-cluster can have smaller distinct clusters. Cells from different super-clusters can be a part of the same trajectory.
+Once the cells are clustered you can ask what genes makes them different from one another (find top markers) and can compare clusters to identify targeted contrasts. You can also identify the type of each cell in the data by clustering and then assigning a cell type to each cluster based on its gene expression profile.
+
+## Step 4: Find top marker genes in clusters
+Once cells have been clustered, this step helps to ask what genes make them different from one another.
+
+## Step 5: Differential expression analysis and visualization
+This step helps to find genes that are differentially expressed between groups of cells and across a trajectory. Its useful in finding genes that vary across cells of different types, are collected at different time points, or have been perturbed in different ways.
+
+## Step 6: Trajectory analysis
+This step organizes each super-cluster into a trajectory. It learns the principal graph and then assigns a pseudotime value to each cell. This step is especially useful in case of time-series or progression data where each time point could potentially be a trajectory branch.
+
+## BBI pipeline deliverables shared with collaborators ##
+* **01-raw_fastq**: Raw sequence files in FASTQ format
+* **02-alignment_bam**: Alignment files in BAM format
+* **03-sample_cds.Rds**: cds object for your single-cell experiment
+* **04-umi_counts.matrix**: Numeric matrix of xpression values where rows are genes and columns are cells
+* **05-gene_annotations.txt**: A dataframe where rows are features (e.g. genes), and columns are gene attributes
+* **06-cell_annotations.txt**: A dataframe where rows are cells and columns are cell attributes
+* **07-alignment_stats.txt**: File with alignment/mapping statistics
+* **08-duplication_stats.txt**: File with duplication statistics
+* **09-SampleIDMap.csv**: Map of your sample IDs to the internal BAT lab sample IDs
+* **10-dashboard.html**: Investigator dashboard
+
+##################################################################################################

@@ -1,0 +1,317 @@
+---
+title: "BBI single cell data analysis tutorial"
+host: Brotman Baty Institute Single-cell Bioinformatics Team
+date: "December 9, 2020"
+output: pdf_document
+---
+
+**Contacts**
+aishwarya.gogate@seattlechildrens.org, hpliner@uw.edu
+
+
+##########################################################################################
+Structure of the tutorial:
+#1. Main content
+
+#2. Bonus questions
+These are questions you should attempt during the tutorial.
+
+#3. Challenge question
+These questions are difficult! You do not have all the information you need provided - you'll need to find further information on the internet. Attempt these if you're ahead in the tutorial exercises.
+##########################################################################################
+##########################################################################################
+
+## Useful links for getting help:
+
+# Website links
+Monocle 3 website: https://cole-trapnell-lab.github.io/monocle3/
+Garnett website: https://cole-trapnell-lab.github.io/garnett/docs_m3/
+
+# Submit bug reports
+Submit Monocle 3 bug reports on the Monocle 3 github repository: https://github.com/cole-trapnell-lab/monocle3
+Submit Garnett bug reports on the Garnett github repository: https://github.com/cole-trapnell-lab/garnett
+
+# Ask technical questions
+Post Monocle 3 questions on the google group: https://groups.google.com/g/monocle-3-users
+Post Garnett questions on the google group: https://groups.google.com/g/garnett-users
+##########################################################################################
+##########################################################################################
+
+## Load Monocle 3 & Garnett
+### Note: You must have these already installed for this session.
+```{r echo=FALSE, results="hide", error=FALSE, message=FALSE, warning=FALSE}
+library(monocle3)
+library(garnett)
+library(ggplot2)
+library(dplyr)
+```
+
+##########################################################################################
+##########################################################################################
+
+# The Garnett pipeline
+
+The Garnett workflow has two major parts:
+
+1. Train/obtain the classifier
+- Either download an existing classifier, or train your own.
+- To train, Garnett parses a marker file, chooses a set of training cells, and then trains a multinomial classifier to distinguish cell types.
+
+2. Classify cells
+- Garnett applies the classifier to a set of cells to generate cell type assignments.
+- Optionally, Garnett will expand classifications to similar cells to generate a separate set of cluster-extended type assignments.
+##########################################################################################
+##########################################################################################
+
+# 1a. Using a pre-trained classifier
+- There are two options for the first part of the Garnett workflow: using a pre-trained classifier, or generating your own classifier.
+- The list of available pre-trained classifiers for various organisms and tissues can be found on the garnett website.
+
+# To use a pre-trained classifier, first download the classifier, and then load it into your R session using:
+```{r echo=FALSE}
+#classifier <- readRDS("path/to/classifier.RDS")
+
+# Once you've loaded the pre-trained classifier, go can move on to part 2 i.e. classifying cells.
+```
+##########################################################################################
+##########################################################################################
+
+# 1b. Train your own classifier
+- If a classifier doesn't exist for your tissue type, or doesn't include the cell types you expect in your data, then you'll need to generate your own.
+
+There are a few steps involved in training your own classifier as shown below:
+
+# 1. Loading your data
+```{r echo=FALSE}
+# NOTE: the 'system.file' file name is only necessary to read in included package data
+
+mat <- Matrix::readMM(system.file("extdata", "exprs_sparse.mtx", package = "garnett"))
+fdata <- read.table(system.file("extdata", "fdata.txt", package = "garnett"))
+pdata <- read.table(system.file("extdata", "pdata.txt", package = "garnett"), sep="\t")
+row.names(mat) <- row.names(fdata)
+colnames(mat) <- row.names(pdata)
+
+# create a new CDS object
+pbmc_cds <- new_cell_data_set(as(mat, "dgCMatrix"),
+                              cell_metadata = pdata,
+                              gene_metadata = fdata)                          
+```
+##########################################################################################
+
+# 2. Constructing a marker file
+- The second major input you'll need is a marker file.
+- It contains a list of cell type definitions written in an easy-to-read text format.
+- These cell type definitions tell Garnett how to choose cells to train the model on.
+- Each cell type definition starts with a '>' symbol and the cell type name, followed by a series of lines with definition information. Definition lines start with a keyword and a ':' and entries are separated by a comma.
+
+For eg:
+>B cells
+expressed: CD19, MS4A1
+
+>T cells
+expressed: CD3D
+
+## There are two ways to generate your marker file:
+A. If you know a lot about your data, generate a marker file using known markers from the literature.
+
+B. If you are just exploring, you can use the top_markers function in Monocle 3 to determine which genes are specific to each cluster and use these to generate a marker file.
+
+## Note: You can make several additions to your marker file:
+- Define the expression (expressed/not expressed)
+For eg:
+expressed: gene1, gene2
+expressed: MYOD1, MYH3
+
+not expressed: gene1, gene2
+not expressed: PAX6, PAX3
+
+- More expression specifications (expressed above/below/between)
+For eg:
+expressed above: gene1 value, gene2 value
+expressed above: MYOD1 4.2, MYH3 700
+
+expressed below: gene1 value, gene2 value
+expressed below: PAX6 20, PAX3 4
+
+expressed between: gene1 value1 value2, gene2 value1 value2
+expressed between: PAX6 10 20, PAX3 4 100
+
+- Define the meta data
+For eg:
+subtype of: celltype
+subtype of: T cells
+
+custom meta data: attribute1, attribute2
+tissue: spleen, thymus
+
+- Provide your evidence
+- We highly recommend that you document how you chose your marker definitions.
+- To make it easier to keep track of, we provide an additional specification - references: - that will store your citation information for each cell type.
+- Add a set of URLs or DOIs and they will be included in your classifier.
+##########################################################################################
+
+# 3. Checking & plotting your markers
+- Garnett includes functions to check whether your markers are likely to work well.
+- the two relevant functions are check_markers and plot_markers
+- check_markers generates a table of information about your markers and plot_markers plots the most relevant information.
+- Few more arguments needed to use these functions: db, cds_gene_id_type, marker_file_gene_id_type
+
+```{r echo=FALSE}
+library(org.Hs.eg.db)
+marker_file_path <- system.file("extdata", "pbmc_bad_markers.txt",
+                                package = "garnett")
+marker_check <- check_markers(pbmc_cds, marker_file_path,
+                              db=org.Hs.eg.db,
+                              cds_gene_id_type = "SYMBOL",
+                              marker_file_gene_id_type = "SYMBOL")
+
+plot_markers(marker_check)
+```
+Note: What exactly are ambiguity scores?
+
+## Bonus question:
+How can you check if a gene might be a good marker or not? 
+Hint: Can you plot the expression of your chosen markers with plot_cells?
+
+## CHALLENGE:
+How can marker file building go wrong?
+Check what happens if you mix up marker genes? For eg:
+- if a gene is expressed everywhere?
+- if you leave out a cell type?
+##########################################################################################
+
+# 4. Train the classifier
+Now it's time to train the classifier. The arguments should be pretty close to those for check_markers.
+```{r echo=FALSE}
+set.seed(260)
+
+marker_file_path <- system.file("extdata", "pbmc_test.txt",
+                                package = "garnett")
+pbmc_classifier <- train_cell_classifier(cds = pbmc_cds,
+                                         marker_file = marker_file_path,
+                                         db=org.Hs.eg.db,
+                                         cds_gene_id_type = "SYMBOL",
+                                         num_unknown = 50,
+                                         marker_file_gene_id_type = "SYMBOL")
+#num_unknown 50 is very low & done for speed, use deafult of 500
+```
+After running train_cell_classifier function, the output object of type "garnett_classifier" contains all of the information necessary to classify cells.
+
+
+## Bonus question:
+What does the num_unknown parameter do?
+
+## CHALLENGE:
+What happens when you change num_unknown?
+
+
+##########################################################################################
+
+# 5. Viewing the classification genes
+- Garnett classification is trained using a multinomial elastic-net regression.
+- This means that certain genes are chosen as the relevant genes for distinguishing between cell types.
+- Which genes are chosen may be of interest, so Garnett includes a function to access the chosen genes.
+
+```{r echo=FALSE}
+feature_genes <- get_feature_genes(pbmc_classifier, 
+                                   node = "root",
+                                   db = org.Hs.eg.db)
+head(feature_genes)
+
+# Note: You can also view the references using:
+get_classifier_references(pbmc_classifier)
+```
+## Bonus question:
+What genes were used for classification besides those in the marker file?
+
+##########################################################################################
+##########################################################################################
+
+# 2. Classifying your cells
+```{r echo=FALSE}
+pbmc_cds <- classify_cells(pbmc_cds, pbmc_classifier,
+                           db = org.Hs.eg.db,
+                           cluster_extend = TRUE,
+                           cds_gene_id_type = "SYMBOL")
+
+
+head(pData(pbmc_cds))
+
+table(pData(pbmc_cds)$cell_type)
+# B cells CD4 T cells CD8 T cells     T cells     Unknown
+#     207         129          61         164         239
+
+table(pData(pbmc_cds)$cluster_ext_type)
+# B cells CD4 T cells     T cells 
+#     403         190         207 
+
+
+qplot(tsne_1, tsne_2, color = cell_type, data = as.data.frame(pData(pbmc_cds))) + 
+    theme_bw()
+
+qplot(tsne_1, tsne_2, color = cluster_ext_type, data = as.data.frame(pData(pbmc_cds))) + 
+    theme_bw()
+
+# Because this example data is from a FACS sorted cell sample, we can compare Garnett's assignments to the "true" cell types.
+qplot(tsne_1, tsne_2, color = FACS_type, data = as.data.frame(pData(pbmc_cds))) + 
+    theme_bw()
+```
+
+## Bonus question:
+When do you use cluster extend vs not use it?
+
+## CHALLENGE:
+How can you cluster extend to your own clusters?
+##########################################################################################
+##########################################################################################
+
+# 1c. Train a marker-free classifier
+This is particularly useful if all cell types are identified in one dataset and then applied to a new dataset.
+Warning - Alpha Feature: It has not been published yet!
+
+```{r echo=FALSE}
+set.seed(260)
+head(pData(pbmc_cds))
+
+# Add the columns needed for the example:
+pData(pbmc_cds)$known_type <- ifelse(pData(pbmc_cds)$FACS_type == "B cells", "B cells", "T cells")
+head(pData(pbmc_cds))
+
+marker_file_path <- system.file("extdata", "pbmc_marker_free_test.txt",
+                                package = "garnett")
+pbmc_classifier <- train_cell_classifier(cds = pbmc_cds,
+                                         marker_file = marker_file_path,
+                                         db=org.Hs.eg.db,
+                                         cds_gene_id_type = "SYMBOL",
+                                         num_unknown = 50,
+                                         marker_file_gene_id_type = "SYMBOL")
+
+```
+Note: See below for an example of a valid marker file with some cell types defined using expression and others defined marker-free:
+>B cells
+known_type: B cells
+
+>T cells
+known_type: T cells
+
+>CD4 T cells
+expressed: CD4
+subtype of:  T cells
+
+>CD8 T cells
+expressed: CD8A, CD8B
+subtype of: T cells
+
+## Bonus question:
+Can you identify T cell subtypes in the same marker file using gene expression?
+
+##########################################################################################
+##########################################################################################
+- Common marker file errors & how to spot them
+- What if my species doesn't have an AnnotationDbi-class database?
+- Submitting a classifier
+- Note: We are soon adding fetal classifiers from recent science papers to the website!
+##########################################################################################
+##########################################################################################
+
+

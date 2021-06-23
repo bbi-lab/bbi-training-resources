@@ -1,0 +1,439 @@
+---
+title: "BBI single cell data analysis tutorial"
+host: Brotman Baty Institute Single-cell Bioinformatics Team
+date: "September 9, 2020"
+output: pdf_document
+---
+
+**Contacts**
+aishwarya.gogate@seattlechildrens.org, hpliner@uw.edu
+
+
+#################################################################################################
+Structure of the tutorial:
+#1. Main content
+
+#2. Bonus questions
+These are questions you should attempt during the tutorial.
+
+#3. Challenge question
+These questions are difficult! You do not have all the information you need provided - you'll need
+to find further information on the internet. Attempt these if you're ahead in the tutorial exercises.
+#################################################################################################
+
+## The Monocle 3 pipeline
+Link to website: https://cole-trapnell-lab.github.io/monocle3/
+Submit bug reports on the Monocle 3 github repository: https://github.com/cole-trapnell-lab/monocle3
+Post questions on the google group: https://groups.google.com/g/monocle-3-users
+
+## Load Monocle 3
+### Note: You must have Monocle 3 already installed
+```{r echo=FALSE, results="hide", error=FALSE, message=FALSE, warning=FALSE}
+library(monocle3)
+library(ggplot2)
+library(dplyr)
+```
+
+#################################################################################################
+# A few preliminaries
+#################################################################################################
+
+## Load the cds object
+```{r load, echo=FALSE}
+expression_matrix <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_expression.rds"))
+cell_metadata <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_colData.rds"))
+gene_annotation <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_rowData.rds"))
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+```
+
+## Another option is to read in pre-made cds files
+```{r echo=TRUE}
+#cds1 <- readRDS('~/Downloads/cds1.RDS')
+#cds2 <- readRDS('~/Downloads/cds2.RDS')
+```
+
+# If you need to combine multiple cds objects, use the combine_cds function
+```{r echo=TRUE}
+#cds <- combine_cds(list(cds1=cds1, cds2=cds2))
+```
+
+## Test out the accessor functions
+```{r echo=FALSE}
+cds
+head(colData(cds))
+head(rowData(cds))
+head(counts(cds))
+```
+
+#################################################################################################
+# You get back your data, now what? Try some things!
+#################################################################################################
+
+### Q1. How many "good" cells do I have?
+
+What do good cells look like?
+- high UMI count (but not too high)
+- low mitochondrial reads
+- singlets
+
+
+## Remove cells with low UMI counts (BBI default cut off is 100)
+```{r echo=FALSE}
+# Add a column in colData called n.umi
+colData(cds)$n.umi <- Matrix::colSums(counts(cds))
+
+# Now remove cells/nuclei with low UMI counts in one of two ways:
+cds <- cds[,colData(cds)$n.umi > 500]
+# OR
+#cds <- cds[,Matrix::colSums(counts(cds)) > 500]
+
+# OR
+
+# If you have BBI returned data, there will already be a n.umi column in the colData(cds)
+#cds <- cds[,colData(cds)$n.umi > 500]
+
+# plot the distribution of UMIs
+qplot(colData(cds)$n.umi, geom="density")
+qplot(log10(colData(cds)$n.umi), geom="density")
+
+# You can further filter for high mito % & unreasonably high UMI counts
+# Hint: Look at summary(colData(cds)$n.umi) and decide your cut-offs
+
+#cds <- cds[,colData(cds)$n.umi < 50000]
+#cds <- cds[,colData(cds)$perc_mitochondrial_umis < 10]
+```
+
+## CHALLENGE:
+What's the distribution of mitochondrial genome reads in your data?
+Hint: How do you know which genes are mitochondrial?
+
+
+#################################################################################################
+
+### Q2. How many "types" of cells do I have?
+
+## Pre-process the cds
+### Note: This step normalizes the data and runs PCA
+```{r echo=FALSE}
+
+cds <- preprocess_cds(cds)
+plot_pc_variance_explained(cds)
+
+# If you see that the majority of variance isn't explained in the
+# plot, you can increase the number of PCA dimensions like this:
+# cds <- preprocess_cds(cds, num_dim=100)
+#
+# For most datasets, the default of 50 will be sufficient
+
+```
+
+## Run UMAP to get low dimension representation and visualize
+```{r echo=FALSE}
+cds <- reduce_dimension(cds)
+cds <- detect_genes(cds)
+
+# Check the colData and rowData now. What do you see?
+head(colData(cds))
+head(rowData(cds))
+
+plot_cells(cds)
+```
+
+## Cluster cells and visualize the clusters and partitions
+### Note: Partitions are basically super-clusters
+```{r echo=FALSE}
+cds <- cluster_cells(cds)
+head(partitions(cds, reduction_method = "UMAP"))
+head(clusters(cds, reduction_method = "UMAP"))
+plot_cells(cds)
+plot_cells(cds, color_cells_by="partition", group_cells_by="partition")
+plot_cells(cds, color_cells_by="cluster", group_cells_by="cluster")
+```
+
+## Plot the expression of some genes
+```{r echo=TRUE, error=FALSE, message=FALSE, warning=FALSE}
+plot_cells(cds, genes = c("csq-1", "hum-9", "glh-1", "pgl-1"))
+```
+
+
+# Bonus question:
+What if I don't like my clustering? How can I change it?
+Hint: What parameters are available for the cluster_cells function? (Try running ?cluster_cells)
+```{r echo = FALSE}
+cds <- cluster_cells(cds, resolution=1e-5)
+plot_cells(cds)
+```
+
+## Bonus question:
+Can you try plotting other genes of importance to you?
+
+## CHALLENGE:
+How different is the clustering if you use tSNE instead of UMAP?
+
+
+#################################################################################################
+
+### Q3. I have data from several different sequencing runs. How do I correct for batch effects?
+Hint: check out the align_cds function!
+
+```{r echo=FALSE}
+cds <- align_cds(cds, num_dim = 100, alignment_group = "plate")
+cds <- reduce_dimension(cds)
+plot_cells(cds, color_cells_by="plate", label_cell_groups=FALSE)
+```
+
+Did align_cds make the data look better? If not, what do you think you missed?
+Hint: Did you run reduce_dimension again?
+
+What happens when you change preprocess_method from "PCA" to "Aligned"?
+
+## Bonus question:
+What if you wanted to batch correct based on another "XXX" variable? (Try with your own dataset)
+
+
+#################################################################################################
+
+### Q4. What makes the "types" of cells different?
+
+### DIFFERENTIAL EXPRESSION ANALYSIS ###
+
+1. Are these populations of cells different in their expression of specific genes?
+2. What are all the genes differentially expressed?
+    - covariates
+3. Modules of expression.
+
+
+## Subset cells interactively to isolate germline and body wall muscle cells
+Hint: some body wall muscle markers: csq-1, hum-9
+      some germline markers: glh-1, pgl-1
+
+```{r echo=FALSE}
+plot_cells(cds, genes = c("csq-1", "hum-9", "glh-1", "pgl-1"))
+```
+
+```{r echo=FALSE}
+cds_subset <- choose_cells(cds)
+```
+
+## Compare genes across chosen clusters
+Monocle 3 works by fitting a regression model to each gene. You can specify this model to account for various factors in your experiment (time, treatment, and so on). For example, in your data, if the cells were collected at different time points, you can test whether any of the genes in the data change over time in their expression by fitting a generalized linear model to each one.
+```{r echo=FALSE}
+gene_fits <- fit_models(cds_subset[1:1000,], model_formula_str = "~cao_cluster")
+# Note: model_formula_str has to be something present in your colData!
+fit_coefs <- coefficient_table(gene_fits)
+head(fit_coefs)
+```
+
+# Question you can ask: How many genes are differentially expressed between the two partitions/clusters?
+
+## Method #1: regression analysis
+## We can identify genes that vary across all clusters by calling the fit_models() function
+```{r echo=FALSE}
+# Remember: this takes a while!!
+#gene_fits = fit_models(cds, model_formula_str = "~cao_cluster")
+```
+
+## Similarly, we can identify genes that vary across plate by calling the fit_models() function
+### Note: You can also include multiple variables, for example ~cao_cluster + plate, which can be very helpful for subtracting unwanted batch effects.
+```{r echo=FALSE}
+gene_fits = fit_models(cds_subset[1:1000,], model_formula_str = "~cao_cluster + plate")
+# You can have other model_formula_str terms such as time, developmental stage, etc.
+
+## Now let's see which of these genes have cluster & plate-dependent expression. First, we extract a table of coefficients from each model using the coefficient_table() function:
+fit_coefs = coefficient_table(gene_fits)
+fit_coefs
+
+## How to interpret this table?
+# - Term
+# - Estimate
+# - Normalized estimate
+# - p-val
+# - q-val
+
+# Now let's explore fit_coefs a bit!
+# - Can you find significant genes in cluster 12?
+
+# To do this, first let's pull out the genes that are significant in cluster 12
+clus12_terms <- fit_coefs %>% filter(term == "cao_cluster12")
+
+# Now we will filter the results and control for the FDR as follows:
+clus12_terms %>% filter (q_value < 0.05) %>% select(gene_short_name, term, q_value, estimate)
+
+# - Can you find genes dependent on different factors?
+#Hint: You can have other model_formula_str terms such as time, developmental stage, etc.
+
+
+# - Can you plot violin plots for gene expression across clusters?
+plot_genes_violin(cds_subset, group_cells_by="cao_cluster", ncol=2) +
+      theme(axis.text.x=element_text(angle=45, hjust=1))
+# Do you notice the error message!
+
+ciliated_genes <- c("che-1",
+                    "hlh-17",
+                    "nhr-6",
+                    "dmd-6",
+                    "ceh-36",
+                    "ham-1")
+
+cds_ciliated <- cds[rowData(cds)$gene_short_name %in% ciliated_genes,]
+
+# - Can you plot violin plots for gene expression across clusters?
+plot_genes_violin(cds_ciliated, group_cells_by="cao_cluster", ncol=2) +
+      theme(axis.text.x=element_text(angle=45, hjust=1))
+
+
+# Try with another column such as tissue type:
+plot_genes_violin(cds_ciliated, group_cells_by="cao_tissue", ncol=2) +
+      theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+## CHALLENGE:
+1. Find out something else about this data!
+2. What variables will you want to test in your data?
+
+
+## Method #2: graph-autocorrelation analysis
+## We can find genes that vary between groups of cells in UMAP or t-SNE space by calling the graph_test() function
+```{r echo=FALSE}
+ciliated_genes = c("che-1",
+                   "hlh-17",
+                   "nhr-6",
+                   "dmd-6",
+                   "ceh-36",
+                   "ham-1")
+cds_ciliated <- cds[rowData(cds)$gene_short_name %in% ciliated_genes,]
+
+plot_cells(cds_ciliated, color_cells_by="partition")
+cds_ciliated <- cluster_cells(cds_ciliated)
+plot_cells(cds_ciliated, color_cells_by="partition")
+pr_graph_test_res <- graph_test(cds_ciliated, neighbor_graph="knn", cores=8)
+pr_deg_ids <- row.names(subset(pr_graph_test_res, q_value < 0.05))
+
+# You can easily save these results into a csv file!
+write.csv(pr_graph_test_res, file = "pr_graph_test_res_save.csv")
+write.csv(pr_deg_ids, file = "pr_deg_ids_save.csv")
+
+# The above output will have columns for the gene_id, gene symbol, p-val, q-val, a count of the number of cells that are expressed above a min threshold and a Morans test statistic.
+
+
+## Take home message from the DE testing section:
+# When do I use the fit_models function instead of the graph_test function?
+
+# fit_models: To investigate which genes are differentially expressed between clusters using regression analysis.
+# graph_test: An alternative way of finding genes that vary between groups of cells in UMAP or t-SNE space using spatial autocorrelation analysis. Generally used along with trajectory analysis.
+
+```
+
+## Bonus question:
+Can you rank the genes by how similar they are in their expression values?
+Hint: Check the morans_I column!
+
+
+# The data frame pr_graph_test_res has the Moran's I test results for each gene in the cds. If you'd like to rank the genes by effect size, sort this table by the morans_I column, which ranges from -1 to +1.
+- A value of 0 indicates no effects.
+- A value of +1 indicates perfect positive autocorrelation and suggests that nearby cells have very similar values of a gene's expression. It shows that a gene is expressed in a focal region of the UMAP space (e.g. specific to one or more clusters).
+
+## CHALLENGE:
+How will you use the above information to find co-regulated genes?
+Hint: Check out the find_gene_modules() function!
+
+#################################################################################################
+
+### Q5. Does my data express different genes in different functional states? (eg: during development or in response to stimuli)
+
+### TRAJECTORY ANALYSIS ###
+
+# Note : The workflow for constructing trajectories is very similar to the workflow for clustering, but it has a few additional steps
+
+Take a subset of the data that has a 'dynamic' component
+
+```{r echo=FALSE}
+sub_cds <- cds[,colData(cds)$cao_cluster == "6"]
+
+# Tip: After you have the subsetted cds, rerun preprocess and reduce dimension and clustering
+sub_cds <- preprocess_cds(sub_cds)
+sub_cds <- reduce_dimension(sub_cds)
+sub_cds <- cluster_cells(sub_cds)
+```
+
+
+# Next step is to learn the trajectory graph:
+```{r echo=FALSE}
+sub_cds <- learn_graph(sub_cds)
+# This function fits a principal graph within each partition.
+
+plot_cells(sub_cds,
+           color_cells_by = "cao_cell_type",
+           label_groups_by_cluster=FALSE,
+           label_leaves=FALSE,
+           label_branch_points=FALSE)
+```
+
+Are there any genes that are differentially expressed based on dynamics?
+
+```{r echo=FALSE}
+# choose the root node
+sub_cds <- order_cells(sub_cds)
+
+# The order_cells() function needs you to specify the root nodes of the trajectory graph. If you don't specify it as an argument, it will launch a graphical user interface for selecting one or more root nodes.
+
+plot_cells(sub_cds,
+           color_cells_by = "pseudotime",
+           label_cell_groups=FALSE,
+           label_leaves=TRUE,
+           label_branch_points=TRUE,
+           graph_label_size=1.5)
+
+# This plot colored by pseudotime shows you how the cells were ordered in pseudotime which is a measure of how much progress an individual cell has made through a process.
+
+```
+
+
+## CHALLENGE:
+CAN YOU COMBINE Q4 AND Q5 TO IDENTIFY GENES THAT VARY BASED ON PSEUDOTIME?
+
+#################################################################################################
+
+### QUICK BONUS SECTION ###
+### Q6.A) How to select a specific cluster and then divide that cluster into further sub-clusters?
+### Q6.B) How to add a specific cluster as a variable to the colData table?
+
+```{r echo=FALSE}
+# Q6.A)
+# Subset your main cds by picking a specific cluster
+# Preprocess, reduce dimension and re-cluster the chosen cluster again
+# Plot it
+pick_cluster_cds <- cds[,colData(cds)$cao_cluster == "1"]
+pick_cluster_cds <- preprocess_cds(pick_cluster_cds)
+pick_cluster_cds <- reduce_dimension(pick_cluster_cds)
+pick_cluster_cds <- cluster_cells(pick_cluster_cds)
+plot_cells(pick_cluster_cds)
+
+# Now check if you can change the cluster resolution?
+
+# Q6.B)
+#colData(cds)$cluster1 <- clusters(cds) == "1")
+
+```
+
+### Q7. Does your data have doublets? How sure are you?
+
+Hint: Check out scrublet! - A tool for identifying doublets in single-cell RNA-seq data.
+- Takes a UMI counts matrix with cells as rows and genes as columns
+- Calculates a doublet score for each cell
+- Simulates doublets from the observed data and uses a knn classifier to calculate a continuous doublet_score between 0 & 1
+- You can use this score as a threshold to separate predicted_doublets from the rest of your clean data
+
+Link to the scrublet github repository:
+https://github.com/AllonKleinLab/scrublet
+
+### Lastly, you can also knit your results together into a report using knitr!! ###
+
+
+#######################################################################################
+THANK YOU FOR ATTENDING! STAY TUNED FOR FUTURE TUTORIALS!
+PLEASE GIVE US FEEDBACK, IT HELPS US IMPROVE.
+#######################################################################################

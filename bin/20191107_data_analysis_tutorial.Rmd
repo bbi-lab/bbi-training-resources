@@ -1,0 +1,359 @@
+---
+title: "BBI single cell data analysis tutorial"
+host: Brotman Baty Institute Single-cell Bioinformatics Team
+date: "November 7, 2019"
+output: pdf_document
+---
+
+**Contacts**
+aishwarya.gogate@seattlechildrens.org, hpliner@uw.edu
+
+##################################################################################################
+# Q1. How do I install R and Rstudio? First, know your operating system! Then follow the steps below!
+##################################################################################################
+
+# Download R (Open below link in a web browser chrome/safari/firefox)
+# For Mac users
+https://cran.r-project.org/bin/macosx/
+
+# For Windows users
+https://cran.r-project.org/bin/windows/base/
+
+# Download Rstudio (Open below link in a web browser chrome/safari/firefox)
+# Choose the installers depending on your operating system!
+https://rstudio.com/products/rstudio/download/#download
+
+## Some helpful points to note!
+### What is the meaning of R, R 3.6.1 and Rstudio?
+#R: It is a programming language used for statistical computing.
+#R 3.6.1: This is a directory that contains binaries and packages to run on your operating system.
+#Rstudio: It is an interface that uses the R programming language to perform data analysis.
+
+### What exactly is the usefulness of Rstudio?
+#1. Rstudio (with knitr) allows you to seamlessly document what you are doing while you are doing it.
+#2. It also provides a streamlined way of saving figures and other output.
+#3. Instead of writing code in a normal text file, you write it in a simple markdown format (.Rmd).
+##################################################################################################
+
+
+##################################################################################################
+# Q2. How do I install Monocle 3?
+##################################################################################################
+
+## Before you proceed, some important things to check!
+#1. Do you have R version 3.6.1 or higher?
+
+#2. Do you have Bioconductor installed?
+```{r echo=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install(version = "3.10")
+```
+
+#3. Do you have a few more Bioconductor dependencies that aren't automatically installed?
+```{r echo=FALSE}
+BiocManager::install(c('BiocGenerics', 'DelayedArray', 'DelayedMatrixStats',
+                       'limma', 'S4Vectors', 'SingleCellExperiment',
+                       'SummarizedExperiment', 'batchelor'))
+```
+
+#4. When you complete points #1., #2. and #3. proceed to install Monocle 3.
+```{r echo=FALSE}
+install.packages("devtools")
+devtools::install_github('cole-trapnell-lab/leidenbase')
+devtools::install_github('cole-trapnell-lab/monocle3', ref = "develop")
+
+#Test the installation
+library(monocle3)
+```
+
+## Some helpful points to note!
+### Common errors that users encounter when installing Monocle 3 are:
+#1. Errors involving Gdal
+#2. Errors involving Xcode
+#3. Errors involving gfortran
+#4. Errors involving reticulate
+
+#Look for solutions here: https://cole-trapnell-lab.github.io/monocle3/docs/installation/
+##################################################################################################
+
+##################################################################################################
+# Q3. Some basic R exercises
+##################################################################################################
+
+##Some basics
+```{r echo=FALSE}
+#Get the current working directory
+getwd()
+
+#Set the current working directory to something else
+setwd('/path-to-the-dir-you-want-as-current-directory')
+
+#List files in the that directory
+list.files()
+```
+
+## Assignment operators, data frames, head and tail operators, using functions
+```{r echo=FALSE}
+# Assign values to variables
+x <- 3
+x
+x <- "Welcome BBI collabs"
+x
+
+# Use R as a calculator
+y <- 7 + 4
+y
+z <- x+y #(Do you get an error?)
+y <- (7+4)*6
+y
+
+# Logical operators - testing whether something is TRUE or FALSE
+y == 67
+y == 66
+
+q <- 'BBI'
+
+# Why do we get different answers below? What do '&' and '|' mean?
+y == 67 & q == 'BBI'
+y == 67 | q == 'BBI'
+
+
+#Data frames: A data frame is used for storing data in a table format.
+#We will use a built-in data frame in R for our tutorial.
+data(mtcars)
+mtcars
+
+# head/tail operators in R
+head(mtcars) #To see just the top few rows
+tail(mtcars) #To see only a few rows on the bottom
+
+# Count number of rows and columns
+nrow(mtcars)
+ncol(mtcars)
+
+# Subset a data frame
+mtcars[1, 2]
+mtcars["Mazda RX4", "cyl"]
+mtcars[1:3, 6]
+mtcars[1:3, 1:6]
+mtcars[1,]
+mtcars[,3:4]
+
+# How to use/call a function in R?
+
+# Define a simple function
+myFirstFun<-function(n)
+{
+  # Compute the square of integer 'n'
+  n*n   
+}
+
+# Assign '10' to 'k'
+k <- 10
+
+# Call 'myFirstFun' with that value
+my_result <- myFirstFun(k)
+
+# Print 'my_result'
+my_result
+
+# Make a function with 2 argument
+multiply <- function(x, y = 7) {
+  x * y
+}
+
+multiply(2, 6)
+
+# What is happening here? Why can we give only one argument?
+multiply(2)
+
+# To find out about available argument for a function
+# (built in or part of a package) read the help pages using '?'
+# For example, read about the 'log' function from base R
+#
+# Most functions include "Examples" at the bottom of the help pages that can be especially helpful
+
+?log
+
+
+### Challenge ### Warning: May require googling!
+
+# Can you figure out the mean miles per gallon (mpg) in the mtcars data?
+# What about the total number of gears in all the cars?
+# Hint: read about the 'sum' and 'mean' functions in base R
+# Hint2: how do we isolate a single column from a data frame (there are lots of ways!)
+
+
+### Challenge 2 ### Warning: May require googling!
+
+# The 'iris' dataset includes measurements of the Sepals and Petals of three
+# species of flowers. Which of the three species has the longest petals on
+# average, and what is the species of the individual flower with the longest
+# petals? We have provided some suggested steps to get you started
+
+# load the iris dataset
+data("iris")
+
+# Take a look at a bit of the data using 'head'
+head(iris)
+
+# Figure out what the three species are
+# Hint: the 'table' function can be useful here - do some googling
+
+# Subset the data frame into separate data frames for each species
+
+# Find the averages and maximums for each species
+# Hint: check out the 'max' function
+
+```
+## Points to note:
+#1. A data frame is used for storing data in table format.
+#2. The top line of the table, called the header, contains the column names.
+#3. Each horizontal line afterward denotes a data row, which begins with the name of the row, and then followed by the actual data.
+#4. Each data member of a row is called a cell.
+#5. To retrieve data in a cell, you would enter its row and column coordinates in the single square bracket "[]" operator.
+#6. The two coordinates are separated by a comma, eg: mtcars[1, 2]
+##################################################################################################
+
+##################################################################################################
+# Q4. How do I load my data?
+##################################################################################################
+
+## Load Monocle 3
+```{r echo=FALSE}
+library(monocle3)
+library(ggplot2)
+```
+
+## Load the cds object (sci-RNAseq data)
+```{r load, echo=FALSE}
+expression_matrix <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_expression.rds"))
+cell_metadata <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_colData.rds"))
+gene_annotation <- readRDS(url("http://staff.washington.edu/hpliner/data/cao_l2_rowData.rds"))
+
+cds <- new_cell_data_set(expression_matrix,
+                         cell_metadata = cell_metadata,
+                         gene_metadata = gene_annotation)
+```
+
+## Test out the accessor functions
+```{r echo=FALSE}
+cds
+head(colData(cds))
+head(rowData(cds))
+head(counts(cds))
+```
+## Load 10X data
+# To input data from 10X Genomics Cell Ranger, you can use the load_cellranger_data function:
+
+# Provide the path to the Cell Ranger output.
+```{r echo=FALSE}
+cds_10X <- load_cellranger_data("~/Downloads/10X_data")
+cds
+head(colData(cds_10X))
+head(rowData(cds_10X))
+head(counts(cds_10X))
+```
+##################################################################################################
+
+##################################################################################################
+# Q5. You got your data loaded, now what? Try some things!
+##################################################################################################
+
+### A. How many "good" cells do I have?
+
+## Remove cells with low UMI counts (BBI default cut off is 100)
+```{r echo=FALSE}
+colData(cds)$n.umis <- Matrix::colSums(counts(cds))
+
+# Plot the distribution of UMIs
+qplot(colData(cds)$n.umi, geom="density")
+qplot(log10(colData(cds)$n.umi), geom="density")
+
+cds <- cds[,Matrix::colSums(counts(cds)) > 1000]
+cds <- cds[,colData(cds)$perc_mitochondrial_umis < 10]
+# In the BBI output, percent mitochondrial UMIs will also be included - try to have < 10%
+```
+
+### B. How many "types" of cells do I have?
+
+## Pre-process the cds
+### Note: This step normalizes the data and runs PCA
+```{r echo=FALSE}
+
+cds <- preprocess_cds(cds, num_dim = 100)
+plot_pc_variance_explained(cds)
+
+```
+
+## Run UMAP to get low dimension representation and visualize
+```{r echo=FALSE}
+cds <- reduce_dimension(cds)
+plot_cells(cds)
+```
+
+## Cluster cells and visualize the clusters and partitions
+### Note: Partitions are basically super-clusters
+```{r echo=FALSE}
+cds <- cluster_cells(cds)
+head(partitions(cds, reduction_method = "UMAP"))
+head(clusters(cds, reduction_method = "UMAP"))
+plot_cells(cds)
+plot_cells(cds, color_cells_by="partition", group_cells_by="partition")
+plot_cells(cds, color_cells_by="cluster", group_cells_by="cluster")
+```
+
+## How about a challenge?:
+# How many partitions do you see?
+# How many clusters do you see?
+# How different is the clustering if you use tSNE instead of UMAP?
+##################################################################################################
+
+
+##################################################################################################
+## FAQs
+1. Stringent UMI cutoff
+We are often asked how to filter data using a specific (in most cases more stringent) UMI cut-off.
+You can either directly do this while generating a new cds object or use the following one-liner:
+cds <- cds[,Matrix::colSums(counts(cds)) > 1000]
+
+2. Mitochondrial genes as QC metric
+High expression of mitochondrial genes can be an indicator of low quality cells. As a first pass, we recommend using a higher UMI cutoff (the default of 100 is likely too low) and then see if those cells are filtered out.
+##################################################################################################
+
+##For further understanding:
+
+## Detailed steps
+In order to identify specific clusters of genes, compare the clusters, perform differential expression analysis and trajectory analysis, we use the Monocle 3 package [link](https://cole-trapnell-lab.github.io/monocle3/). This package provides a toolkit for analyzing single-cell gene expression experiments.
+
+Given below is the description of each step of the Monocle 3 workflow:
+
+## Step 1: Normalize and pre-process the data
+Monocle 3 first normalizes the expression values to account for technical variation in the RNA recovery and sequencing depth.
+
+## Step 2: Dimensionality reduction
+In order to eliminate noise and make further analysis more tractable, Monocle 3 projects the cells onto the top 50 (default) principal components. You can then choose whether to carry out further non-linear dimensionality reduction either by t-SNE or UMAP methods. Monocle 3 then clusters the cells and further organizes them into trajectories if desired.
+
+## Step 3: Cluster and partition cells
+Monocle 3 can learn if cells should be placed in the same trajectory or not through its clustering step. It cleverly detects if some cells are part of a different process than others in the dataset and will therefore build different trajectories simultaneously from a single dataset. This is done by partitioning the cells into super-clusters. Each super-cluster can have smaller distinct clusters. Cells from different super-clusters can be a part of the same trajectory.
+Once the cells are clustered you can ask what genes makes them different from one another (find top markers) and can compare clusters to identify targeted contrasts. You can also identify the type of each cell in the data by clustering and then assigning a cell type to each cluster based on its gene expression profile.
+
+## Step 4: Differential expression analysis and visualization
+This step helps to find genes that are differentially expressed between groups of cells and across a trajectory. Its useful in finding genes that vary across cells of different types, are collected at different time points, or have been perturbed in different ways.
+
+## Step 5: Trajectory analysis
+This step organizes each super-cluster into a trajectory. It learns the principal graph and then assigns a pseudotime value to each cell. This step is especially useful in case of time-series or progression data where each time point could potentially be a trajectory branch.
+
+## BBI Deliverables via Globus:
+* **01-raw_fastq**: Raw sequence files in FASTQ format
+* **02-alignment_bam**: Alignment files in BAM format
+* **03-sample_cds.Rds**: cds object for your single-cell experiment
+* **04-umi_counts.matrix**: Numeric matrix of xpression values where rows are genes and columns are cells
+* **05-gene_annotations.txt**: A dataframe where rows are features (e.g. genes), and columns are gene attributes
+* **06-cell_annotations.txt**: A dataframe where rows are cells and columns are cell attributes
+* **07-alignment_stats.txt**: File with alignment/mapping statistics
+* **08-duplication_stats.txt**: File with duplication statistics
+* **09-knee_plot.png**: Plot of UMIs captured per single cell
+* **10-dashboard.html**: Investigator dashboard
+##################################################################################################
